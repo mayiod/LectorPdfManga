@@ -45,12 +45,16 @@ fun ReaderScreen(
     uri: Uri,
     title: String,
     pageTurnMode: PageTurnMode,
+    viewMode: ViewMode,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
+    val double = viewMode == ViewMode.DOUBLE
+
     var book by remember { mutableStateOf<PdfBook?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var current by rememberSaveable(uri.toString()) { mutableIntStateOf(0) }
+    // Página "canónica" (índice 0-based). En modo libro la unidad es el pliego que la contiene.
+    var page by rememberSaveable(uri.toString()) { mutableIntStateOf(0) }
     var showControls by remember { mutableStateOf(false) }
     var size by remember { mutableStateOf(IntSize.Zero) }
     var renderedSize by remember { mutableStateOf(IntSize.Zero) }
@@ -71,25 +75,31 @@ fun ReaderScreen(
     }
     DisposableEffect(uri) { onDispose { book?.close() } }
 
-    // Renderizar la página actual y las vecinas; liberar las lejanas
-    LaunchedEffect(book, size, current) {
+    // Renderizar las páginas necesarias; liberar las lejanas.
+    // Una página: ancho completo. Libro: cada página a medio ancho.
+    LaunchedEffect(book, size, page, double) {
         val b = book ?: return@LaunchedEffect
         if (size.width == 0 || size.height == 0) return@LaunchedEffect
-        if (renderedSize != size) {
+        val target = IntSize(if (double) size.width / 2 else size.width, size.height)
+        if (renderedSize != target) {
             images.clear()
-            renderedSize = size
+            renderedSize = target
         }
-        val wanted = (current - 1..current + 2)
+        val u = (page + 1) / 2 // pliego actual (modo libro)
+        val needed = if (double) (2 * u - 3)..(2 * u + 2) else (page - 1)..(page + 2)
+        val keep = if (double) (2 * u - 4)..(2 * u + 3) else (page - 2)..(page + 2)
+        val wanted = needed
             .filter { it in 0 until b.pageCount }
-            .sortedBy { abs(it - current) }
+            .sortedBy { abs(it - page) }
         for (i in wanted) {
-            if (i !in images) images[i] = b.render(i, size.width, size.height)
+            if (i !in images) images[i] = b.render(i, target.width, target.height)
         }
-        images.keys.filter { abs(it - current) > 2 }.forEach { images.remove(it) }
+        images.keys.filter { it !in keep }.forEach { images.remove(it) }
     }
 
     val err = error
     val b = book
+    val unit = if (double) (page + 1) / 2 else page
 
     Box(
         Modifier
@@ -115,10 +125,11 @@ fun ReaderScreen(
                 ) {
                     PageTurnView(
                         pageCount = b.pageCount,
-                        currentPage = current,
+                        doublePage = double,
+                        currentUnit = unit,
                         mode = pageTurnMode,
                         pageImage = { images[it] },
-                        onPageChange = { current = it },
+                        onUnitChange = { u -> page = if (double) maxOf(0, 2 * u - 1) else u },
                         onCenterTap = { showControls = !showControls }
                     )
                 }
@@ -152,11 +163,19 @@ fun ReaderScreen(
                             Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text("${current + 1} / ${b.pageCount}")
+                            val label = if (double) {
+                                listOfNotNull(
+                                    (2 * unit - 1).takeIf { it >= 0 },
+                                    (2 * unit).takeIf { it < b.pageCount }
+                                ).joinToString("-") { (it + 1).toString() }
+                            } else {
+                                (page + 1).toString()
+                            }
+                            Text("$label / ${b.pageCount}")
                             if (b.pageCount > 1) {
                                 Slider(
-                                    value = current.toFloat(),
-                                    onValueChange = { current = it.roundToInt() },
+                                    value = page.toFloat(),
+                                    onValueChange = { page = it.roundToInt() },
                                     valueRange = 0f..(b.pageCount - 1).toFloat()
                                 )
                             }

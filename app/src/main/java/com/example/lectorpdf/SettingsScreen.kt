@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SettingsScreen(
     settings: AppSettings,
+    onViewModeChange: (ViewMode) -> Unit,
     onPageTurnChange: (PageTurnMode) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onBack: () -> Unit
@@ -51,6 +52,16 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
+            OptionGroup(
+                title = "Visualización",
+                options = listOf(
+                    ViewMode.SINGLE to "Una página",
+                    ViewMode.DOUBLE to "Dos páginas (libro abierto)"
+                ),
+                selected = settings.viewMode,
+                onSelect = onViewModeChange
+            )
+            Spacer(Modifier.height(24.dp))
             OptionGroup(
                 title = "Animación de paso de página",
                 options = listOf(

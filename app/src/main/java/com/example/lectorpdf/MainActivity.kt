@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
                             Screen.SETTINGS -> SettingsScreen(
                                 settings = s,
                                 onPageTurnChange = { scope.launch { repo.setPageTurnMode(it) } },
+                                onViewModeChange = { scope.launch { repo.setViewMode(it) } },
                                 onThemeChange = { scope.launch { repo.setThemeMode(it) } },
                                 onBack = { screen = Screen.HOME }
                             )
@@ -65,6 +66,7 @@ class MainActivity : ComponentActivity() {
                                     uri = Uri.parse(it),
                                     title = pdfName,
                                     pageTurnMode = s.pageTurnMode,
+                                    viewMode = s.viewMode,
                                     onBack = { screen = Screen.HOME }
                                 )
                             }

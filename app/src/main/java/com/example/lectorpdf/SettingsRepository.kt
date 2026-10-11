@@ -12,9 +12,13 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 /** CORNER = se toma desde una esquina (con doblez). SLIDE = se desliza la página completa (sin doblez). */
 enum class PageTurnMode { CORNER, SLIDE }
 
+/** SINGLE = una página por pantalla. DOUBLE = dos páginas, como un libro abierto. */
+enum class ViewMode { SINGLE, DOUBLE }
+
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,          // predeterminado: seguir al sistema
     val pageTurnMode: PageTurnMode = PageTurnMode.CORNER,
+    val viewMode: ViewMode = ViewMode.SINGLE,
     val rootFolderUri: String? = null
 )
 
@@ -25,6 +29,7 @@ class SettingsRepository(private val context: Context) {
     private object Keys {
         val THEME = stringPreferencesKey("theme_mode")
         val TURN = stringPreferencesKey("page_turn_mode")
+        val VIEW = stringPreferencesKey("view_mode")
         val ROOT = stringPreferencesKey("root_folder_uri")
     }
 
@@ -36,6 +41,9 @@ class SettingsRepository(private val context: Context) {
             pageTurnMode = p[Keys.TURN]
                 ?.let { runCatching { PageTurnMode.valueOf(it) }.getOrNull() }
                 ?: PageTurnMode.CORNER,
+            viewMode = p[Keys.VIEW]
+                ?.let { runCatching { ViewMode.valueOf(it) }.getOrNull() }
+                ?: ViewMode.SINGLE,
             rootFolderUri = p[Keys.ROOT]
         )
     }
@@ -46,6 +54,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setPageTurnMode(mode: PageTurnMode) {
         context.dataStore.edit { it[Keys.TURN] = mode.name }
+    }
+
+    suspend fun setViewMode(mode: ViewMode) {
+        context.dataStore.edit { it[Keys.VIEW] = mode.name }
     }
 
     suspend fun setRootFolder(uri: String) {

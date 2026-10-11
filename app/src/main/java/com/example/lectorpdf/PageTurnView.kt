@@ -7,6 +7,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,6 +29,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -36,25 +38,39 @@ import kotlin.math.atan2
 import kotlin.math.roundToInt
 
 /**
- * Estado de una página "en movimiento".
- * pageIdx: página que se levanta (la de abajo es pageIdx + 1).
- * t: 0 = página plana, 1 = página ya pasada.
- * lift: desplazamiento vertical del dedo (solo modo esquina).
+ * Una "unidad" es lo que se ve en pantalla: una página (modo una página)
+ * o un pliego de dos páginas (modo libro abierto).
+ *
+ * Pliego k = páginas (2k-1 | 2k). El pliego 0 muestra solo la portada a la derecha.
+ *
+ * Turn: avance de la unidad unitIdx hacia la siguiente.
+ * t: 0 = plana, 1 = ya pasada. lift: desplazamiento vertical del dedo (modo esquina).
  */
 private data class Turn(
-    val pageIdx: Int,
+    val unitIdx: Int,
     val cornerTop: Boolean,
     val t: Float,
     val lift: Float
 )
 
+private class BookView(
+    val double: Boolean,
+    val pageCount: Int,
+    val background: Color,
+    val image: (Int) -> ImageBitmap?
+) {
+    fun left(u: Int) = if (double) 2 * u - 1 else -1
+    fun right(u: Int) = if (double) 2 * u else u
+}
+
 @Composable
 fun PageTurnView(
     pageCount: Int,
-    currentPage: Int,
+    doublePage: Boolean,
+    currentUnit: Int,
     mode: PageTurnMode,
     pageImage: (Int) -> ImageBitmap?,
-    onPageChange: (Int) -> Unit,
+    onUnitChange: (Int) -> Unit,
     onCenterTap: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -62,12 +78,15 @@ fun PageTurnView(
     var animating by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    val page by rememberUpdatedState(currentPage)
-    val count by rememberUpdatedState(pageCount)
+    val unit by rememberUpdatedState(currentUnit)
+    val units by rememberUpdatedState(if (doublePage) pageCount / 2 + 1 else pageCount)
+    val pages by rememberUpdatedState(pageCount)
+    val dbl by rememberUpdatedState(doublePage)
     val turnMode by rememberUpdatedState(mode)
-    val changePage by rememberUpdatedState(onPageChange)
+    val changeUnit by rememberUpdatedState(onUnitChange)
     val centerTap by rememberUpdatedState(onCenterTap)
     val images by rememberUpdatedState(pageImage)
+    val background = MaterialTheme.colorScheme.background
 
     fun animateTurn(from: Turn, toOne: Boolean) {
         scope.launch {
@@ -79,8 +98,8 @@ fun PageTurnView(
                 targetValue = target,
                 animationSpec = tween(ms, easing = FastOutSlowInEasing)
             ) { v, _ -> turn = from.copy(t = v) }
-            // forward: toOne => avanzó. backward (pageIdx = actual-1): toOne => se canceló.
-            changePage(if (toOne) from.pageIdx + 1 else from.pageIdx)
+            // avance normal: toOne => unitIdx + 1. Retroceso (unitIdx = actual-1): toOne => se canceló.
+            changeUnit(if (toOne) from.unitIdx + 1 else from.unitIdx)
             turn = null
             animating = false
         }
@@ -120,14 +139,14 @@ fun PageTurnView(
                                 forward = dx < 0              // izquierda = siguiente, derecha = anterior
                                 cornerTop = startY < h / 2f   // mitad superior/inferior => esquina
                                 decided = true
-                                if ((forward && page >= count - 1) || (!forward && page <= 0)) {
+                                if ((forward && unit >= units - 1) || (!forward && unit <= 0)) {
                                     active = false
                                 }
                             }
                             if (active && decided) {
                                 val t = if (forward) -dx / w else 1f - dx / w
                                 turn = Turn(
-                                    pageIdx = if (forward) page else page - 1,
+                                    unitIdx = if (forward) unit else unit - 1,
                                     cornerTop = cornerTop,
                                     t = t.coerceIn(0f, 1f),
                                     lift = dy.coerceIn(-0.4f * h, 0.4f * h)
@@ -164,38 +183,56 @@ fun PageTurnView(
                     val top = pos.y < h / 2f
                     val lift = if (top) 0.22f * h else -0.22f * h
                     when {
-                        pos.x > w * 0.65f && page < count - 1 ->
-                            animateTurn(Turn(page, top, 0f, lift), toOne = true)
-                        pos.x < w * 0.35f && page > 0 ->
-                            animateTurn(Turn(page - 1, top, 1f, lift), toOne = false)
+                        pos.x > w * 0.65f && unit < units - 1 ->
+                            animateTurn(Turn(unit, top, 0f, lift), toOne = true)
+                        pos.x < w * 0.35f && unit > 0 ->
+                            animateTurn(Turn(unit - 1, top, 1f, lift), toOne = false)
                         pos.x in (w * 0.35f)..(w * 0.65f) -> centerTap()
                     }
                 }
             }
     ) {
+        val book = BookView(dbl, pages, background) { images(it) }
         val cur = turn
         when {
-            cur == null -> drawPage(images(page))
-            turnMode == PageTurnMode.SLIDE ->
-                drawSlide(images(cur.pageIdx), images(cur.pageIdx + 1), cur.t)
-            else -> drawCurl(images(cur.pageIdx), images(cur.pageIdx + 1), cur)
+            cur == null -> drawUnit(book, unit)
+            turnMode == PageTurnMode.SLIDE -> drawSlide(book, cur.unitIdx, cur.t)
+            else -> drawCurl(book, cur)
         }
     }
 }
 
-private fun DrawScope.drawPage(img: ImageBitmap?) {
+/** Dibuja una página en la franja [x, x + width]. Si el índice no existe, no dibuja nada. */
+private fun DrawScope.drawHalf(book: BookView, page: Int, x: Float, width: Float) {
+    if (page < 0 || page >= book.pageCount) return
+    val img = book.image(page)
     if (img == null) {
-        drawRect(Color.White)
+        drawRect(Color.White, topLeft = Offset(x, 0f), size = Size(width, size.height))
     } else {
-        drawImage(img, dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt()))
+        drawImage(
+            img,
+            dstOffset = IntOffset(x.roundToInt(), 0),
+            dstSize = IntSize(width.roundToInt(), size.height.roundToInt())
+        )
     }
 }
 
-/** Modo "deslizar": la página se mueve completa, sin doblez. */
-private fun DrawScope.drawSlide(top: ImageBitmap?, under: ImageBitmap?, t: Float) {
+/** Dibuja la unidad completa: una página, o las dos páginas del pliego. */
+private fun DrawScope.drawUnit(book: BookView, u: Int) {
+    if (book.double) {
+        val half = size.width / 2f
+        drawHalf(book, book.left(u), 0f, half)
+        drawHalf(book, book.right(u), half, half)
+    } else {
+        drawHalf(book, book.right(u), 0f, size.width)
+    }
+}
+
+/** Modo "deslizar": la unidad completa se mueve, sin doblez. */
+private fun DrawScope.drawSlide(book: BookView, u: Int, t: Float) {
     val w = size.width
     val x = -w * t
-    drawPage(under)
+    drawUnit(book, u + 1)
     val sw = 24.dp.toPx()
     drawRect(
         brush = Brush.horizontalGradient(
@@ -206,23 +243,32 @@ private fun DrawScope.drawSlide(top: ImageBitmap?, under: ImageBitmap?, t: Float
         topLeft = Offset(w + x, 0f),
         size = Size(sw, size.height)
     )
-    translate(left = x) { drawPage(top) }
+    translate(left = x) {
+        drawRect(book.background) // para que no se transparente la unidad de abajo
+        drawUnit(book, u)
+    }
 }
 
 /**
- * Modo "esquina": la esquina C sigue al punto P. La línea de doblez es la mediatriz de C-P;
- * la parte de la página del lado de C se oculta y se dibuja reflejada (el reverso) sobre la página.
+ * Modo "esquina". La hoja que se levanta es la página derecha (en modo libro, solo la mitad derecha).
+ * La esquina C sigue al punto P; la línea de doblez es la mediatriz de C-P.
+ * La parte del lado de C se oculta y se dibuja reflejada (el reverso) sobre la página.
+ * En modo libro el reverso es la página izquierda del pliego siguiente y termina sobre el lomo.
  */
-private fun DrawScope.drawCurl(top: ImageBitmap?, under: ImageBitmap?, turn: Turn) {
+private fun DrawScope.drawCurl(book: BookView, turn: Turn) {
     val w = size.width
     val h = size.height
     val t = turn.t
-    if (t <= 0.001f) { drawPage(top); return }
-    if (t >= 0.999f) { drawPage(under); return }
+    val u = turn.unitIdx
+    if (t <= 0.001f) { drawUnit(book, u); return }
+    if (t >= 0.999f) { drawUnit(book, u + 1); return }
+
+    val sheetW = if (book.double) w / 2f else w
+    val sheetL = w - sheetW
 
     val c = Offset(w, if (turn.cornerTop) 0f else h)
     val lift = turn.lift * (1f - t) * (t * 6f).coerceAtMost(1f)
-    val p = Offset(w - 2f * w * t, c.y + lift)
+    val p = Offset(w - 2f * sheetW * t, c.y + lift)
     val d = p - c
     val n = d / d.getDistance()           // normal de la línea de doblez (apunta de C hacia P)
     val m = (c + p) / 2f                  // punto de la línea de doblez
@@ -240,20 +286,21 @@ private fun DrawScope.drawCurl(top: ImageBitmap?, under: ImageBitmap?, turn: Tur
         close()
     }
 
-    val removed = halfPlane(-1f)   // lado de la esquina: se ve la página de abajo
-    val visible = halfPlane(1f)    // lado que queda de la página actual
+    val removed = halfPlane(-1f)   // lado de la esquina: se ve lo que hay debajo
+    val visible = halfPlane(1f)    // lado que queda de la hoja
     val shadow = Brush.linearGradient(
         colors = listOf(Color.Black.copy(alpha = 0.4f), Color.Transparent),
         start = m,
         end = m - n * 28.dp.toPx()
     )
 
-    // 1) página de abajo + sombra del doblez
-    drawPage(under)
-    clipPath(removed) { drawRect(shadow) }
+    // 1) fondo: página izquierda actual (solo libro) y página derecha siguiente, con sombra del doblez
+    if (book.double) drawHalf(book, book.left(u), 0f, w / 2f)
+    drawHalf(book, book.right(u + 1), sheetL, sheetW)
+    clipRect(sheetL, 0f, w, h) { clipPath(removed) { drawRect(shadow) } }
 
-    // 2) parte visible de la página actual
-    clipPath(visible) { drawPage(top) }
+    // 2) parte de la hoja que sigue visible
+    clipPath(visible) { drawHalf(book, book.right(u), sheetL, sheetW) }
 
     // 3) solapa: reflejo de la zona oculta respecto a la línea de doblez
     val angle = Math.toDegrees(atan2(perp.y, perp.x).toDouble()).toFloat()
@@ -265,10 +312,24 @@ private fun DrawScope.drawCurl(top: ImageBitmap?, under: ImageBitmap?, turn: Tur
             rotate(-angle, Offset.Zero)
             translate(-m.x, -m.y)
         }) {
-            clipPath(removed) {
-                drawPage(top)
-                drawRect(Color(0xFFEFEFEF).copy(alpha = 0.88f)) // reverso del papel
-                drawRect(shadow)
+            clipRect(sheetL, 0f, w, h) {
+                clipPath(removed) {
+                    if (book.double) {
+                        // reverso real: página izquierda del pliego siguiente, espejada respecto al lomo
+                        withTransform({
+                            translate(w / 2f, 0f)
+                            scale(-1f, 1f, Offset.Zero)
+                            translate(-w / 2f, 0f)
+                        }) {
+                            drawHalf(book, book.left(u + 1), 0f, w / 2f)
+                        }
+                    } else {
+                        // una página: se transparenta el frente como reverso del papel
+                        drawHalf(book, book.right(u), sheetL, sheetW)
+                        drawRect(Color(0xFFEFEFEF).copy(alpha = 0.88f))
+                    }
+                    drawRect(shadow)
+                }
             }
         }
     }
