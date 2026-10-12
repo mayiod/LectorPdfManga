@@ -37,6 +37,7 @@ class MainActivity : ComponentActivity() {
                         var screen by rememberSaveable { mutableStateOf(Screen.HOME) }
                         var pdfUri by rememberSaveable { mutableStateOf<String?>(null) }
                         var pdfName by rememberSaveable { mutableStateOf("") }
+                        var startPage by rememberSaveable { mutableStateOf(0) }
 
                         BackHandler(enabled = screen != Screen.HOME) { screen = Screen.HOME }
 
@@ -44,11 +45,16 @@ class MainActivity : ComponentActivity() {
                             Screen.HOME -> HomeScreen(
                                 browser = browser,
                                 rootUri = s.rootFolderUri,
+                                folderView = s.folderView,
+                                onFolderViewChange = { scope.launch { repo.setFolderView(it) } },
                                 onRootSelected = { uri -> scope.launch { repo.setRootFolder(uri.toString()) } },
                                 onOpenPdf = { uri, name ->
-                                    pdfUri = uri.toString()
-                                    pdfName = name
-                                    screen = Screen.READER
+                                    scope.launch {
+                                        startPage = repo.getLastPage(uri.toString())
+                                        pdfUri = uri.toString()
+                                        pdfName = name
+                                        screen = Screen.READER
+                                    }
                                 },
                                 onOpenSettings = { screen = Screen.SETTINGS }
                             )
@@ -61,15 +67,18 @@ class MainActivity : ComponentActivity() {
                                 onBack = { screen = Screen.HOME }
                             )
 
-                            Screen.READER -> pdfUri?.let {
+                            Screen.READER -> pdfUri?.let { fileUri ->
                                 ReaderScreen(
-                                    uri = Uri.parse(it),
+                                    uri = Uri.parse(fileUri),
                                     title = pdfName,
                                     pageTurnMode = s.pageTurnMode,
                                     viewMode = s.viewMode,
+                                    initialPage = startPage,
+                                    onPageSave = { page -> scope.launch { repo.setLastPage(fileUri, page) } },
                                     onBack = { screen = Screen.HOME }
                                 )
                             }
+
                         }
                     }
                 }

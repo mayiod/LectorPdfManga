@@ -20,11 +20,11 @@ import java.util.zip.ZipInputStream
 
 /** Miniatura = primera página del PDF / primera imagen del CBZ. Se guarda en memoria mientras la app vive. */
 object Thumbnails {
-    private const val W = 180
-    private const val H = 252
+    private const val W = 300
+    private const val H = 420
     private val IMAGE_EXT = setOf("jpg", "jpeg", "png", "webp", "bmp")
 
-    private val cache = LruCache<String, ImageBitmap>(60)
+    private val cache = LruCache<String, ImageBitmap>(50)
     private val failed: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val gate = Semaphore(3) // máximo 3 miniaturas generándose a la vez
 

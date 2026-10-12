@@ -6,19 +6,17 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.size
-import androidx.compose.runtime.produceState
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -28,7 +26,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -70,13 +67,16 @@ class FolderBrowser {
     }
 }
 
-private class Entry(val file: DocumentFile, val name: String, val isDir: Boolean)
+/** Un elemento de la carpeta (subcarpeta, PDF o CBZ). */
+class Entry(val file: DocumentFile, val name: String, val isDir: Boolean)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     browser: FolderBrowser,
     rootUri: String?,
+    folderView: FolderView,
+    onFolderViewChange: (FolderView) -> Unit,
     onRootSelected: (Uri) -> Unit,
     onOpenPdf: (Uri, String) -> Unit,
     onOpenSettings: () -> Unit
@@ -136,6 +136,7 @@ fun HomeScreen(
                     }
                 },
                 actions = {
+                    if (rootUri != null) ViewMenu(current = folderView, onSelect = onFolderViewChange)
                     IconButton(onClick = onOpenSettings) {
                         Icon(Icons.Default.Settings, contentDescription = "Configuración")
                     }
@@ -150,7 +151,7 @@ fun HomeScreen(
         ) {
             when {
                 rootUri == null -> EmptyState(
-                    message = "Elige la carpeta donde tienes tus PDF",
+                    message = "Elige la carpeta donde tienes tus libros",
                     buttonText = "Elegir carpeta raíz"
                 ) { picker.launch(null) }
 
@@ -163,25 +164,56 @@ fun HomeScreen(
 
                 loading -> CircularProgressIndicator(Modifier.align(Alignment.Center))
 
-                else -> LazyColumn(Modifier.fillMaxSize()) {
-                    item {
-                        TextButton(
-                            onClick = { picker.launch(null) },
-                            modifier = Modifier.padding(horizontal = 8.dp)
-                        ) { Text("Cambiar carpeta raíz") }
+                else -> {
+                    val open: (Entry) -> Unit = { e ->
+                        if (e.isDir) stack.add(FolderBrowser.Crumb(e.file, e.name))
+                        else onOpenPdf(e.file.uri, e.name)
                     }
-                    if (entries.isEmpty()) {
-                        item { Text("No hay carpetas ni libros (PDF/CBZ) aquí.", Modifier.padding(16.dp)) }
-                    }
-                    items(entries, key = { it.file.uri.toString() }) { e ->
-                        ListItem(
-                            headlineContent = { Text(e.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                            leadingContent = { EntryIcon(e) },
-                            modifier = Modifier.clickable {
-                                if (e.isDir) stack.add(FolderBrowser.Crumb(e.file, e.name))
-                                else onOpenPdf(e.file.uri, e.name)
+                    val isGrid = folderView == FolderView.GRID_LARGE ||
+                        folderView == FolderView.GRID_MEDIUM ||
+                        folderView == FolderView.GRID_SMALL
+
+                    if (isGrid) {
+                        val minSize = when (folderView) {
+                            FolderView.GRID_LARGE -> 150.dp
+                            FolderView.GRID_MEDIUM -> 105.dp
+                            else -> 76.dp
+                        }
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize),
+                            contentPadding = PaddingValues(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                TextButton(onClick = { picker.launch(null) }) { Text("Cambiar carpeta raíz") }
                             }
-                        )
+                            if (entries.isEmpty()) {
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    Text("No hay carpetas ni libros (PDF/CBZ) aquí.", Modifier.padding(16.dp))
+                                }
+                            }
+                            gridItems(entries, key = { it.file.uri.toString() }) { e ->
+                                GridCell(e, folderView) { open(e) }
+                            }
+                        }
+                    } else {
+                        LazyColumn(Modifier.fillMaxSize()) {
+                            item {
+                                TextButton(
+                                    onClick = { picker.launch(null) },
+                                    modifier = Modifier.padding(horizontal = 8.dp)
+                                ) { Text("Cambiar carpeta raíz") }
+                            }
+                            if (entries.isEmpty()) {
+                                item { Text("No hay carpetas ni libros (PDF/CBZ) aquí.", Modifier.padding(16.dp)) }
+                            }
+                            items(entries, key = { it.file.uri.toString() }) { e ->
+                                if (folderView == FolderView.DETAILS) DetailsRow(e) { open(e) }
+                                else ListRow(e) { open(e) }
+                            }
+                        }
                     }
                 }
             }
@@ -200,32 +232,5 @@ private fun EmptyState(message: String, buttonText: String, onClick: () -> Unit)
     ) {
         Text(message)
         Button(onClick = onClick, modifier = Modifier.padding(top = 16.dp)) { Text(buttonText) }
-    }
-}
-
-/** Carpetas: icono. PDF/CBZ: miniatura de la primera página (con icono mientras carga o si falla). */
-@Composable
-private fun EntryIcon(e: Entry) {
-    val context = LocalContext.current
-    val uri = e.file.uri
-    Box(Modifier.size(width = 48.dp, height = 68.dp), contentAlignment = Alignment.Center) {
-        if (e.isDir) {
-            Text("📁", fontSize = 30.sp)
-        } else {
-            val thumb by produceState<ImageBitmap?>(initialValue = Thumbnails.peek(uri), uri) {
-                value = Thumbnails.load(context, uri, e.name)
-            }
-            val t = thumb
-            if (t != null) {
-                Image(
-                    bitmap = t,
-                    contentDescription = null,
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Text(if (e.name.endsWith(".cbz", ignoreCase = true)) "📚" else "📄", fontSize = 26.sp)
-            }
-        }
     }
 }

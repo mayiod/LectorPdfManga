@@ -39,6 +39,8 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.delay
 
 @Composable
 fun ReaderScreen(
@@ -46,6 +48,8 @@ fun ReaderScreen(
     title: String,
     pageTurnMode: PageTurnMode,
     viewMode: ViewMode,
+    initialPage: Int,
+    onPageSave: (Int) -> Unit,
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -54,7 +58,7 @@ fun ReaderScreen(
     var book by remember { mutableStateOf<BookSource?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     // Página "canónica" (índice 0-based). En modo libro la unidad es el pliego que la contiene.
-    var page by rememberSaveable(uri.toString()) { mutableIntStateOf(0) }
+    var page by rememberSaveable(uri.toString()) { mutableIntStateOf(initialPage) }
     var showControls by remember { mutableStateOf(false) }
     var size by remember { mutableStateOf(IntSize.Zero) }
     var renderedSize by remember { mutableStateOf(IntSize.Zero) }
@@ -74,6 +78,18 @@ fun ReaderScreen(
             .onFailure { error = "No se pudo abrir este archivo (¿dañado o protegido con contraseña?)" }
     }
     DisposableEffect(uri) { onDispose { book?.close() } }
+    // Si el archivo cambió y ahora tiene menos páginas, ajustar la página guardada
+    LaunchedEffect(book) {
+        book?.let { page = page.coerceIn(0, maxOf(0, it.pageCount - 1)) }
+    }
+
+    // Guardar la última página leída (con una pequeña espera para no escribir en cada cambio)
+    val latestPage by rememberUpdatedState(page)
+    LaunchedEffect(page) {
+        delay(400)
+        onPageSave(page)
+    }
+    DisposableEffect(Unit) { onDispose { onPageSave(latestPage) } }
 
     // Renderizar las páginas necesarias; liberar las lejanas.
     // Una página: ancho completo. Libro: cada página a medio ancho.

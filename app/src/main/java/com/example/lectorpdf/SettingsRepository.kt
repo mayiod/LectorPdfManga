@@ -6,7 +6,8 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-
+import androidx.datastore.preferences.core.intPreferencesKey
+import kotlinx.coroutines.flow.first
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /** CORNER = se toma desde una esquina (con doblez). SLIDE = se desliza la página completa (sin doblez). */
@@ -15,10 +16,14 @@ enum class PageTurnMode { CORNER, SLIDE }
 /** SINGLE = una página por pantalla. DOUBLE = dos páginas, como un libro abierto. */
 enum class ViewMode { SINGLE, DOUBLE }
 
+/** Cómo se muestran los archivos al navegar carpetas (como el menú "Ver" del explorador de Windows). */
+enum class FolderView { LIST, DETAILS, GRID_LARGE, GRID_MEDIUM, GRID_SMALL }
+
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,          // predeterminado: seguir al sistema
     val pageTurnMode: PageTurnMode = PageTurnMode.CORNER,
     val viewMode: ViewMode = ViewMode.SINGLE,
+    val folderView: FolderView = FolderView.LIST,
     val rootFolderUri: String? = null
 )
 
@@ -30,6 +35,7 @@ class SettingsRepository(private val context: Context) {
         val THEME = stringPreferencesKey("theme_mode")
         val TURN = stringPreferencesKey("page_turn_mode")
         val VIEW = stringPreferencesKey("view_mode")
+        val FOLDER_VIEW = stringPreferencesKey("folder_view")
         val ROOT = stringPreferencesKey("root_folder_uri")
     }
 
@@ -44,6 +50,9 @@ class SettingsRepository(private val context: Context) {
             viewMode = p[Keys.VIEW]
                 ?.let { runCatching { ViewMode.valueOf(it) }.getOrNull() }
                 ?: ViewMode.SINGLE,
+            folderView = p[Keys.FOLDER_VIEW]
+                ?.let { runCatching { FolderView.valueOf(it) }.getOrNull() }
+                ?: FolderView.LIST,
             rootFolderUri = p[Keys.ROOT]
         )
     }
@@ -58,6 +67,17 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setViewMode(mode: ViewMode) {
         context.dataStore.edit { it[Keys.VIEW] = mode.name }
+    }
+
+    suspend fun setFolderView(view: FolderView) {
+        context.dataStore.edit { it[Keys.FOLDER_VIEW] = view.name }
+    }
+
+    suspend fun getLastPage(fileUri: String): Int =
+        context.dataStore.data.first()[intPreferencesKey("page_${fileUri.hashCode()}")] ?: 0
+
+    suspend fun setLastPage(fileUri: String, page: Int) {
+        context.dataStore.edit { it[intPreferencesKey("page_${fileUri.hashCode()}")] = page }
     }
 
     suspend fun setRootFolder(uri: String) {
