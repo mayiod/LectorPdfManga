@@ -6,7 +6,13 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -170,15 +176,7 @@ fun HomeScreen(
                     items(entries, key = { it.file.uri.toString() }) { e ->
                         ListItem(
                             headlineContent = { Text(e.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                            leadingContent = {
-                                Text(
-                                    when {
-                                        e.isDir -> "📁"
-                                        e.name.endsWith(".cbz", ignoreCase = true) -> "📚"
-                                        else -> "📄"
-                                    }
-                                )
-                            },
+                            leadingContent = { EntryIcon(e) },
                             modifier = Modifier.clickable {
                                 if (e.isDir) stack.add(FolderBrowser.Crumb(e.file, e.name))
                                 else onOpenPdf(e.file.uri, e.name)
@@ -202,5 +200,32 @@ private fun EmptyState(message: String, buttonText: String, onClick: () -> Unit)
     ) {
         Text(message)
         Button(onClick = onClick, modifier = Modifier.padding(top = 16.dp)) { Text(buttonText) }
+    }
+}
+
+/** Carpetas: icono. PDF/CBZ: miniatura de la primera página (con icono mientras carga o si falla). */
+@Composable
+private fun EntryIcon(e: Entry) {
+    val context = LocalContext.current
+    val uri = e.file.uri
+    Box(Modifier.size(width = 48.dp, height = 68.dp), contentAlignment = Alignment.Center) {
+        if (e.isDir) {
+            Text("📁", fontSize = 30.sp)
+        } else {
+            val thumb by produceState<ImageBitmap?>(initialValue = Thumbnails.peek(uri), uri) {
+                value = Thumbnails.load(context, uri, e.name)
+            }
+            val t = thumb
+            if (t != null) {
+                Image(
+                    bitmap = t,
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Text(if (e.name.endsWith(".cbz", ignoreCase = true)) "📚" else "📄", fontSize = 26.sp)
+            }
+        }
     }
 }
