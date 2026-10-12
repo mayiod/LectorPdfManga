@@ -51,7 +51,7 @@ fun ReaderScreen(
     val context = LocalContext.current
     val double = viewMode == ViewMode.DOUBLE
 
-    var book by remember { mutableStateOf<PdfBook?>(null) }
+    var book by remember { mutableStateOf<BookSource?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     // Página "canónica" (índice 0-based). En modo libro la unidad es el pliego que la contiene.
     var page by rememberSaveable(uri.toString()) { mutableIntStateOf(0) }
@@ -69,9 +69,9 @@ fun ReaderScreen(
 
     // Abrir / cerrar el PDF
     LaunchedEffect(uri) {
-        runCatching { PdfBook.open(context, uri) }
+        runCatching { openBook(context, uri, title) }
             .onSuccess { book = it }
-            .onFailure { error = "No se pudo abrir este PDF (¿dañado o protegido con contraseña?)" }
+            .onFailure { error = "No se pudo abrir este archivo (¿dañado o protegido con contraseña?)" }
     }
     DisposableEffect(uri) { onDispose { book?.close() } }
 

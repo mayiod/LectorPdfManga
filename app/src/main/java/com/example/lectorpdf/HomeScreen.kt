@@ -108,7 +108,9 @@ fun HomeScreen(
             f.listFiles().mapNotNull { file ->
                 val name = file.name ?: return@mapNotNull null
                 val dir = file.isDirectory
-                if (dir || name.endsWith(".pdf", ignoreCase = true)) Entry(file, name, dir) else null
+                val isBook = name.endsWith(".pdf", ignoreCase = true) ||
+                    name.endsWith(".cbz", ignoreCase = true)
+                if (dir || isBook) Entry(file, name, dir) else null
             }.sortedWith(compareBy<Entry>({ !it.isDir }, { it.name.lowercase() }))
         }
         loading = false
@@ -163,12 +165,20 @@ fun HomeScreen(
                         ) { Text("Cambiar carpeta raíz") }
                     }
                     if (entries.isEmpty()) {
-                        item { Text("No hay carpetas ni PDF aquí.", Modifier.padding(16.dp)) }
+                        item { Text("No hay carpetas ni libros (PDF/CBZ) aquí.", Modifier.padding(16.dp)) }
                     }
                     items(entries, key = { it.file.uri.toString() }) { e ->
                         ListItem(
                             headlineContent = { Text(e.name, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                            leadingContent = { Text(if (e.isDir) "📁" else "📄") },
+                            leadingContent = {
+                                Text(
+                                    when {
+                                        e.isDir -> "📁"
+                                        e.name.endsWith(".cbz", ignoreCase = true) -> "📚"
+                                        else -> "📄"
+                                    }
+                                )
+                            },
                             modifier = Modifier.clickable {
                                 if (e.isDir) stack.add(FolderBrowser.Crumb(e.file, e.name))
                                 else onOpenPdf(e.file.uri, e.name)

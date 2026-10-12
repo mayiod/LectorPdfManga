@@ -18,13 +18,13 @@ import kotlinx.coroutines.withContext
 class PdfBook private constructor(
     private val pfd: ParcelFileDescriptor,
     private val renderer: PdfRenderer
-) {
-    val pageCount: Int = renderer.pageCount
+) : BookSource {
+    override val pageCount: Int = renderer.pageCount
 
     // PdfRenderer no es thread-safe y solo permite una página abierta a la vez.
     private val mutex = Mutex()
 
-    suspend fun render(index: Int, width: Int, height: Int): ImageBitmap =
+    override suspend fun render(index: Int, width: Int, height: Int): ImageBitmap =
         withContext(Dispatchers.IO) {
             mutex.withLock {
                 val page = renderer.openPage(index)
@@ -47,7 +47,7 @@ class PdfBook private constructor(
             }
         }
 
-    fun close() {
+    override fun close() {
         runCatching { renderer.close() }
         runCatching { pfd.close() }
     }
