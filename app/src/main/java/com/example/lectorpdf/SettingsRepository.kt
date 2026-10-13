@@ -2,12 +2,13 @@ package com.example.lectorpdf
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-import androidx.datastore.preferences.core.intPreferencesKey
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
 /** CORNER = se toma desde una esquina (con doblez). SLIDE = se desliza la página completa (sin doblez). */
@@ -19,11 +20,17 @@ enum class ViewMode { SINGLE, DOUBLE }
 /** Cómo se muestran los archivos al navegar carpetas (como el menú "Ver" del explorador de Windows). */
 enum class FolderView { LIST, DETAILS, GRID_LARGE, GRID_MEDIUM, GRID_SMALL }
 
+enum class ReadingDirection { LTR, RTL }
+
+enum class StripPosition { BOTTOM, TOP }
+
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,          // predeterminado: seguir al sistema
     val pageTurnMode: PageTurnMode = PageTurnMode.CORNER,
     val viewMode: ViewMode = ViewMode.SINGLE,
     val folderView: FolderView = FolderView.LIST,
+    val readingDirection: ReadingDirection = ReadingDirection.LTR,
+    val stripPosition: StripPosition = StripPosition.BOTTOM,
     val rootFolderUri: String? = null
 )
 
@@ -36,6 +43,8 @@ class SettingsRepository(private val context: Context) {
         val TURN = stringPreferencesKey("page_turn_mode")
         val VIEW = stringPreferencesKey("view_mode")
         val FOLDER_VIEW = stringPreferencesKey("folder_view")
+        val DIRECTION = stringPreferencesKey("reading_direction")
+        val STRIP = stringPreferencesKey("strip_position")
         val ROOT = stringPreferencesKey("root_folder_uri")
     }
 
@@ -53,6 +62,12 @@ class SettingsRepository(private val context: Context) {
             folderView = p[Keys.FOLDER_VIEW]
                 ?.let { runCatching { FolderView.valueOf(it) }.getOrNull() }
                 ?: FolderView.LIST,
+            readingDirection = p[Keys.DIRECTION]
+                ?.let { runCatching { ReadingDirection.valueOf(it) }.getOrNull() }
+                ?: ReadingDirection.LTR,
+            stripPosition = p[Keys.STRIP]
+                ?.let { runCatching { StripPosition.valueOf(it) }.getOrNull() }
+                ?: StripPosition.BOTTOM,
             rootFolderUri = p[Keys.ROOT]
         )
     }
@@ -68,7 +83,13 @@ class SettingsRepository(private val context: Context) {
     suspend fun setViewMode(mode: ViewMode) {
         context.dataStore.edit { it[Keys.VIEW] = mode.name }
     }
+    suspend fun setReadingDirection(direction: ReadingDirection) {
+        context.dataStore.edit { it[Keys.DIRECTION] = direction.name }
+    }
 
+    suspend fun setStripPosition(position: StripPosition) {
+        context.dataStore.edit { it[Keys.STRIP] = position.name }
+    }
     suspend fun setFolderView(view: FolderView) {
         context.dataStore.edit { it[Keys.FOLDER_VIEW] = view.name }
     }

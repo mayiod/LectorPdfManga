@@ -63,6 +63,8 @@ class MainActivity : ComponentActivity() {
                                 settings = s,
                                 onPageTurnChange = { scope.launch { repo.setPageTurnMode(it) } },
                                 onViewModeChange = { scope.launch { repo.setViewMode(it) } },
+                                onDirectionChange = { scope.launch { repo.setReadingDirection(it) } },
+                                onStripPositionChange = { scope.launch { repo.setStripPosition(it) } },
                                 onThemeChange = { scope.launch { repo.setThemeMode(it) } },
                                 onBack = { screen = Screen.HOME }
                             )
@@ -73,6 +75,8 @@ class MainActivity : ComponentActivity() {
                                     title = pdfName,
                                     pageTurnMode = s.pageTurnMode,
                                     viewMode = s.viewMode,
+                                    readingDirection = s.readingDirection,
+                                    stripPosition = s.stripPosition,
                                     initialPage = startPage,
                                     onPageSave = { page -> scope.launch { repo.setLastPage(fileUri, page) } },
                                     onBack = { screen = Screen.HOME }

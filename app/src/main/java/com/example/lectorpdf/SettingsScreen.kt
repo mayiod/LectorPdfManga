@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.dp
 fun SettingsScreen(
     settings: AppSettings,
     onViewModeChange: (ViewMode) -> Unit,
+    onDirectionChange: (ReadingDirection) -> Unit,
+    onStripPositionChange: (StripPosition) -> Unit,
     onPageTurnChange: (PageTurnMode) -> Unit,
     onThemeChange: (ThemeMode) -> Unit,
     onBack: () -> Unit
@@ -71,6 +73,26 @@ fun SettingsScreen(
                 selected = settings.pageTurnMode,
                 onSelect = onPageTurnChange
             )
+            OptionGroup(
+                title = "Dirección de lectura",
+                options = listOf(
+                    ReadingDirection.LTR to "De izquierda a derecha (predeterminado)",
+                    ReadingDirection.RTL to "De derecha a izquierda (manga)"
+                ),
+                selected = settings.readingDirection,
+                onSelect = onDirectionChange
+            )
+            Spacer(Modifier.height(24.dp))
+            OptionGroup(
+                title = "Barra de páginas",
+                options = listOf(
+                    StripPosition.BOTTOM to "Abajo (predeterminado)",
+                    StripPosition.TOP to "Arriba"
+                ),
+                selected = settings.stripPosition,
+                onSelect = onStripPositionChange
+            )
+            Spacer(Modifier.height(24.dp))
             Spacer(Modifier.height(24.dp))
             OptionGroup(
                 title = "Tema",
