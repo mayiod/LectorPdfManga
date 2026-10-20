@@ -59,7 +59,14 @@ fun ReaderScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val double = viewMode == ViewMode.DOUBLE
+    var size by remember { mutableStateOf(IntSize.Zero) }
+    // Modo automático: retrato = una página, paisaje = dos páginas (se decide con el tamaño real
+    // del área de lectura, así reacciona al girar el dispositivo sin reiniciar la actividad).
+    val double = when (viewMode) {
+        ViewMode.SINGLE -> false
+        ViewMode.DOUBLE -> true
+        ViewMode.AUTO -> size.width > size.height
+    }
     val rtl = readingDirection == ReadingDirection.RTL
 
     var book by remember { mutableStateOf<BookSource?>(null) }
@@ -67,7 +74,6 @@ fun ReaderScreen(
     // Página "canónica" (índice 0-based). En modo libro la unidad es el pliego que la contiene.
     var page by rememberSaveable(uri.toString()) { mutableIntStateOf(initialPage) }
     var showControls by remember { mutableStateOf(false) }
-    var size by remember { mutableStateOf(IntSize.Zero) }
     var renderedSize by remember { mutableStateOf(IntSize.Zero) }
     val images = remember { mutableStateMapOf<Int, ImageBitmap>() }
     val controller = remember { PageTurnController() }

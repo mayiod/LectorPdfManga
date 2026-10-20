@@ -4,13 +4,15 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -37,6 +39,9 @@ import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.roundToInt
+
+/** Zoom máximo permitido con dos dedos. */
+private const val MAX_ZOOM = 5f
 
 /**
  * Una "unidad" es lo que se ve en pantalla: una página (modo una página)
@@ -96,6 +101,9 @@ fun PageTurnView(
 ) {
     var turn by remember { mutableStateOf<Turn?>(null) }
     var animating by remember { mutableStateOf(false) }
+    // Zoom con dos dedos: escala (> 1) y desplazamiento de la página mostrada.
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
     val scope = rememberCoroutineScope()
 
     val unit by rememberUpdatedState(currentUnit)
@@ -145,43 +153,93 @@ fun PageTurnView(
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            // ---- Arrastre ----
+            // ---- Un dedo: pasar página. Dos dedos: zoom + desplazamiento ----
             .pointerInput(Unit) {
-                val tracker = VelocityTracker()
-                var active = false
-                var decided = false
-                var forward = true
-                var cornerTop = false
-                var startY = 0f
-                var dx = 0f
-                var dy = 0f
-                detectDragGestures(
-                    onDragStart = { pos ->
-                        tracker.resetTracking()
-                        startY = pos.y
-                        dx = 0f
-                        dy = 0f
-                        decided = false
-                        active = !animating
-                    },
-                    onDrag = { change, delta ->
-                        if (active) {
-                            change.consume()
-                            tracker.addPosition(change.uptimeMillis, change.position)
-                            // En derecha a izquierda el movimiento horizontal se invierte
-                            dx += delta.x * (if (isRtl) -1f else 1f)
-                            dy += delta.y
-                            val w = size.width.toFloat()
-                            val h = size.height.toFloat()
-                            if (!decided && abs(dx) > viewConfiguration.touchSlop) {
-                                forward = dx < 0              // siguiente = hacia el lado del lomo opuesto
-                                cornerTop = startY < h / 2f   // mitad superior/inferior => esquina
-                                decided = true
-                                if ((forward && unit >= units - 1) || (!forward && unit <= 0)) {
-                                    active = false
-                                }
+                // El zoom nunca deja huecos: el desplazamiento queda limitado al área visible
+                fun clampPan() {
+                    val w = size.width.toFloat()
+                    val h = size.height.toFloat()
+                    val mx = w * (zoom - 1f) / 2f
+                    val my = h * (zoom - 1f) / 2f
+                    pan = if (mx <= 0f || my <= 0f) Offset.Zero
+                    else Offset(pan.x.coerceIn(-mx, mx), pan.y.coerceIn(-my, my))
+                }
+
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val tracker = VelocityTracker()
+                    tracker.resetTracking()
+                    tracker.addPosition(down.uptimeMillis, down.position)
+
+                    var startY = down.position.y
+                    var dx = 0f
+                    var dy = 0f
+                    var decided = false
+                    var forward = true
+                    var cornerTop = false
+                    var turnActive = !animating
+                    var pinching = false
+                    var lastCentroid = down.position
+                    var lastSpread = 0f
+
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.count { it.pressed }
+                        if (pressed == 0) break
+
+                        if (pressed >= 2) {
+                            // ---- Pinch: zoom con dos dedos (y desplazamiento con ellos) ----
+                            val pts = event.changes.filter { it.pressed }.map { it.position }
+                            val c = Offset(
+                                pts.sumOf { it.x.toDouble() }.toFloat() / pts.size,
+                                pts.sumOf { it.y.toDouble() }.toFloat() / pts.size
+                            )
+                            // Separación respecto al centro; con 2 dedos es exactamente su distancia
+                            val s = 2f * (pts.sumOf { (it - c).getDistance().toDouble() } / pts.size).toFloat()
+                            if (!pinching) {
+                                pinching = true
+                                turnActive = false
+                                if (!animating) turn = null // el giro en curso se cancela: la página queda plana
+                                lastCentroid = c
+                                lastSpread = s
+                            } else if (!animating && lastSpread > 1f && s > 1f) {
+                                zoom = (zoom * (s / lastSpread)).coerceIn(1f, MAX_ZOOM)
+                                pan += c - lastCentroid
+                                clampPan()
+                                lastCentroid = c
+                                lastSpread = s
                             }
-                            if (active && decided) {
+                            event.changes.forEach { it.consume() }
+                            continue
+                        }
+
+                        val ch = event.changes.first { it.pressed }
+                        if (pinching) {
+                            // Tras un pinch no se pasa de página hasta levantar todos los dedos
+                            ch.consume()
+                            continue
+                        }
+
+                        val delta = ch.position - ch.previousPosition
+                        tracker.addPosition(ch.uptimeMillis, ch.position)
+                        // En derecha a izquierda el movimiento horizontal se invierte
+                        dx += delta.x * (if (isRtl) -1f else 1f)
+                        dy += delta.y
+
+                        if (!turnActive) continue
+                        if (!decided && abs(dx) > viewConfiguration.touchSlop) {
+                            forward = dx < 0                          // siguiente = hacia el lado del lomo opuesto
+                            cornerTop = startY < size.height / 2f     // mitad superior/inferior => esquina
+                            decided = true
+                            if ((forward && unit >= units - 1) || (!forward && unit <= 0)) {
+                                turnActive = false
+                            }
+                        }
+                        if (decided) {
+                            ch.consume()
+                            if (turnActive) {
+                                val w = size.width.toFloat()
+                                val h = size.height.toFloat()
                                 val t = if (forward) -dx / w else 1f - dx / w
                                 turn = Turn(
                                     unitIdx = if (forward) unit else unit - 1,
@@ -192,26 +250,20 @@ fun PageTurnView(
                                 )
                             }
                         }
-                    },
-                    onDragEnd = {
-                        val cur = turn
-                        if (active && decided && cur != null) {
-                            val vx = tracker.calculateVelocity().x * (if (isRtl) -1f else 1f)
-                            val toOne = when {
-                                vx < -1200f -> true
-                                vx > 1200f -> false
-                                else -> if (forward) cur.t > 0.3f else cur.t > 0.7f
-                            }
-                            animateTurn(cur, toOne)
-                        }
-                        active = false
-                    },
-                    onDragCancel = {
-                        val cur = turn
-                        if (active && decided && cur != null) animateTurn(cur, toOne = !forward)
-                        active = false
                     }
-                )
+
+                    // ---- Fin del gesto: la hoja se pasa o vuelve a su sitio ----
+                    val cur = turn
+                    if (!pinching && turnActive && decided && cur != null && !animating) {
+                        val vx = tracker.calculateVelocity().x * (if (isRtl) -1f else 1f)
+                        val toOne = when {
+                            vx < -1200f -> true
+                            vx > 1200f -> false
+                            else -> if (forward) cur.t > 0.3f else cur.t > 0.7f
+                        }
+                        animateTurn(cur, toOne)
+                    }
+                }
             }
             // ---- Toques: bordes = cambiar página, centro = mostrar/ocultar controles ----
             .pointerInput(Unit) {
@@ -235,6 +287,9 @@ fun PageTurnView(
         val book = BookView(dbl, isRtl, pages, background) { images(it) }
         val cur = turn
         val w = size.width
+        val h = size.height
+        val z = zoom
+        val off = pan
         val drawAll: DrawScope.() -> Unit = {
             when {
                 cur == null -> drawUnit(book, unit)
@@ -242,13 +297,21 @@ fun PageTurnView(
                 else -> drawCurl(book, cur)
             }
         }
-        if (isRtl) {
+        // Zoom/desplazamiento con dos dedos; se recorta al área visible de la página.
+        clipRect(0f, 0f, w, h) {
             withTransform({
-                translate(w, 0f)
-                scale(-1f, 1f, Offset.Zero)
-            }) { drawAll() }
-        } else {
-            drawAll()
+                translate(off.x, off.y)
+                scale(z, z, Offset(w / 2f, h / 2f))
+            }) {
+                if (isRtl) {
+                    withTransform({
+                        translate(w, 0f)
+                        scale(-1f, 1f, Offset.Zero)
+                    }) { drawAll() }
+                } else {
+                    drawAll()
+                }
+            }
         }
     }
 }

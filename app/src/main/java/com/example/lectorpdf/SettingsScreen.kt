@@ -57,6 +57,7 @@ fun SettingsScreen(
             OptionGroup(
                 title = "Visualización",
                 options = listOf(
+                    ViewMode.AUTO to "Automático (vertical: 1 página, horizontal: 2 páginas)",
                     ViewMode.SINGLE to "Una página",
                     ViewMode.DOUBLE to "Dos páginas (libro abierto)"
                 ),

@@ -14,8 +14,12 @@ enum class ThemeMode { SYSTEM, LIGHT, DARK }
 /** CORNER = se toma desde una esquina (con doblez). SLIDE = se desliza la página completa (sin doblez). */
 enum class PageTurnMode { CORNER, SLIDE }
 
-/** SINGLE = una página por pantalla. DOUBLE = dos páginas, como un libro abierto. */
-enum class ViewMode { SINGLE, DOUBLE }
+/**
+ * SINGLE = una página por pantalla. DOUBLE = dos páginas, como un libro abierto.
+ * AUTO = según la orientación del dispositivo: vertical (retrato) una página,
+ * horizontal (paisaje) dos páginas.
+ */
+enum class ViewMode { SINGLE, DOUBLE, AUTO }
 
 /** Cómo se muestran los archivos al navegar carpetas (como el menú "Ver" del explorador de Windows). */
 enum class FolderView { LIST, DETAILS, GRID_LARGE, GRID_MEDIUM, GRID_SMALL }
